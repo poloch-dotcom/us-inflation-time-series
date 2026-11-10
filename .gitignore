@@ -1,0 +1,13 @@
+﻿# data (not shared)
+*.csv
+*.parquet
+*.dta
+*.RData
+*.rds
+# R / Python
+.Rhistory
+.Rproj.user/
+__pycache__/
+*_files/
+Log_file_*.txt
+

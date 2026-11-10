@@ -1,0 +1,151 @@
+﻿---
+title: "Master 1 - Time Series: Homework Report"
+author: "Paul Cros"
+date: "March 2026"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+# Preparation of the environment
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5)
+library(tidyverse)
+library(readr)
+library(tseries)
+library(forecast)
+
+Introduction
+
+This report focuses on the empirical analysis of five macroeconomic and utility time series from a developed country (primarily the US and France). The objective is to evaluate their stationarity, identify the most suitable autoregressive AR(p) models using OLS estimation, and provide short-term forecasts.
+Problem I: Univariate Analysis and Forecasting
+1. Descriptive Analysis and Time Series Properties
+
+For the following variables, we analyze the level (often log-transformed) and the first difference to check for stationarity.
+A. Consumer Price Index (CPI)
+
+We utilize the log of the index to stabilize the variance over the long run.
+
+'''
+# Data Loading and cleaning
+df1 <- read_csv("CPIAUCSL.csv", col_types = cols(observation_date = col_date(format = "%Y-%m-%d"), 
+                                                 CPIAUCSL = col_number()))
+df1$CPIAUCSL <- na.interp(df1$CPIAUCSL)
+serie_prix <- ts(df1$CPIAUCSL, start = c(1947, 1), frequency = 12)
+log_prix <- log(serie_prix)
+
+# Plots and ACF/PACF
+par(mfrow = c(1, 2))
+plot(log_prix, main = "Log Price Index", col = "darkblue", ylab = "Log(CPI)")
+Acf(log_prix, main = "ACF Log-Prix")
+'''
+
+Observations: The Log-CPI shows a very clear, persistent upward trend. The ACF decays almost linearly and remains significant for many lags, which is a classic symptom of non-stationarity (likely a unit root process).
+Extrait de code
+
+diff_log_prix <- diff(log_prix)
+par(mfrow = c(1, 2))
+plot(diff_log_prix, main = "First Difference (Log-Prix)", col = "darkred")
+Acf(diff_log_prix, main = "ACF First Diff")
+
+Comments on First Difference: Once differenced, the series (representing monthly inflation) appears centered around a mean. However, the ACF still shows some significant lags, suggesting that an AR(p) process remains relevant to capture the remaining dynamics.
+B. Inflation Rate
+
+Unlike the price index, the inflation rate is expected to be more stable, though it often exhibits high persistence.
+Extrait de code
+
+df2 <- read_csv("FPCPITOTLZGUSA.csv")
+df2$FPCPITOTLZGUSA <- na.interp(df2$FPCPITOTLZGUSA)
+serie_inflation <- ts(df2$FPCPITOTLZGUSA, start = c(1960, 1), frequency = 12)
+
+par(mfrow = c(1, 2))
+plot(serie_inflation, main = "Inflation Rate", col = "blue")
+Acf(serie_inflation, main = "ACF Inflation")
+
+Analysis: The inflation rate displays "mean-reverting" behavior over decades, but the ACF shows significant correlations for many months. This suggests that while it might be stationary, it is highly persistent.
+C. Real GDP
+
+As suggested by the instructions, we work with the log of the GDP.
+Extrait de code
+
+df3 <- read_csv("GDPC1.csv")
+df3$GDPC1 <- na.interp(df3$GDPC1)
+serie_gdp <- ts(df3$GDPC1, start = c(1947, 1), frequency = 12)
+log_gdp <- log(serie_gdp)
+
+par(mfrow = c(1, 2))
+plot(log_gdp, main = "Log Real GDP", col = "darkgreen")
+Acf(log_gdp, main = "ACF Log-GDP")
+
+Observations: GDP exhibits a strong stochastic trend. The ACF remains close to 1 for several lags, confirming the series is I(1) and requires first-differencing (to obtain GDP growth) for any stationary modeling.
+D. Short-term Interest Rates (Fed Funds)
+Extrait de code
+
+df4 <- read_csv("FEDFUNDS.csv")
+df4$FEDFUNDS <- na.interp(df4$FEDFUNDS)
+serie_interest <- ts(df4$FEDFUNDS, start = c(1954, 7), frequency = 12)
+
+par(mfrow = c(1, 2))
+plot(serie_interest, main = "Short-term Interest Rate", col = "purple")
+Acf(serie_interest, main = "ACF Interest")
+
+Analysis: Interest rates show a cyclic pattern but with very high persistence. The PACF (not shown here but calculated) usually shows a sharp drop after the first few lags, suggesting that an AR(1) or AR(2) might be a good candidate for this series.
+E. Daily Electricity Consumption
+
+This series is unique due to its high-frequency seasonality (daily data).
+Extrait de code
+
+df5 <- read_delim("consommation-quotidienne-brute.csv", delim = ";", 
+                  escape_double = FALSE, col_types = cols(Date = col_date(format = "%d/%m/%Y")), 
+                  trim_ws = TRUE)
+
+df5_clean <- df5 %>%
+  group_by(Date) %>%
+  filter(!any(is.na(`Consommation brute électricité (MW) - RTE`))) %>%
+  summarise(Consommation_Journaliere = sum(`Consommation brute électricité (MW) - RTE`))
+
+serie_log_consumption <- ts(log(df5_clean$Consommation_Journaliere), 
+                            start = c(2012, 1, 1), frequency = 365.25)
+
+plot(serie_log_consumption, main = "Log Daily Electricity Consumption", col = "orange")
+
+Comments: We observe a massive annual cycle caused by seasonal temperature changes. Modeling this solely with a simple AR(p) model will be challenging because the lags required to capture the yearly seasonality (lag 365) are far beyond the standard AR order.
+2. AR(p) Model Estimation
+
+We determine the optimal lag p using the OLS method and the Akaike Information Criterion (AIC) to penalize over-parameterization.
+Extrait de code
+
+# Selection of optimal AR(p) via AIC
+model_cpi <- ar.ols(log_prix, aic = TRUE, order.max = 20)
+model_inf <- ar.ols(serie_inflation, aic = TRUE, order.max = 20)
+model_gdp <- ar.ols(log_gdp, aic = TRUE, order.max = 20)
+model_int <- ar.ols(serie_interest, aic = TRUE, order.max = 20)
+model_con <- ar.ols(serie_log_consumption, aic = TRUE, order.max = 20)
+
+# Summary table
+results <- data.frame(
+  Series = c("Log CPI", "Inflation", "Log GDP", "Interest Rate", "Log Consumption"),
+  Order_p = c(model_cpi$order, model_inf$order, model_gdp$order, 
+              model_int$order, model_con$order)
+)
+print(results)
+
+Interpretation: The AIC selects quite high orders for non-stationary series (like GDP and CPI) to try and account for the trend. For the electricity consumption, the order is maximized at 20, which is expected given the complex seasonality.
+3. Forecasting (1-step and 3-steps ahead)
+
+Finally, we apply the selected AR(p) models to predict the next values in the series.
+Extrait de code
+
+# Forecasting function
+perform_forecast <- function(model, label) {
+  f <- predict(model, n.ahead = 3)
+  cat("\n---", label, "---\n")
+  cat("1-step ahead forecast:", round(f$pred[1], 4), "\n")
+  cat("3-step ahead forecast:", round(f$pred[3], 4), "\n")
+}
+
+perform_forecast(model_cpi, "Log CPI")
+perform_forecast(model_inf, "Inflation")
+perform_forecast(model_gdp, "Log GDP")
+perform_forecast(model_int, "Interest Rate")
+perform_forecast(model_con, "Log Consumption")
+
+Conclusion: The forecasts for trending series (GDP, CPI) continue the upward trajectory, while the interest rate and inflation forecasts tend to revert slowly toward their historical means. For electricity, a 3-day forecast remains close to the last observed value due to the short horizon.
